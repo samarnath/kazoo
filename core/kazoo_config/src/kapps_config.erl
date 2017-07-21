@@ -61,6 +61,8 @@
 -type fetch_ret() :: {'ok', kz_json:object()} |
                      {'error', any()}.
 
+-type set_ret() :: 'ok' | fetch_ret().
+
 -define(KEY_DEFAULT, <<"default">>).
 
 %%-----------------------------------------------------------------------------
@@ -545,29 +547,23 @@ get_all_default_kvs(JObj) ->
 %% @doc
 %% @end
 %%-----------------------------------------------------------------------------
--spec set_string(config_category(), config_key(), text() | binary() | string()) ->
-                        {'ok', kz_json:object()}.
--spec set_integer(config_category(), config_key(), text() | integer()) ->
-                         {'ok', kz_json:object()}.
--spec set_float(config_category(), config_key(), text() | float()) ->
-                       {'ok', kz_json:object()}.
--spec set_boolean(config_category(), config_key(), text() | boolean()) ->
-                         {'ok', kz_json:object()}.
--spec set_json(config_category(), config_key(), text() | kz_json:object()) ->
-                      {'ok', kz_json:object()}.
-
+-spec set_string(config_category(), config_key(), text() | binary() | string()) -> set_ret().
 set_string(Category, Key, Value) ->
     set(Category, Key, kz_term:to_binary(Value)).
 
+-spec set_integer(config_category(), config_key(), text() | integer()) -> set_ret().
 set_integer(Category, Key, Value) ->
     set(Category, Key, kz_term:to_integer(Value)).
 
+-spec set_float(config_category(), config_key(), text() | float()) -> set_ret().
 set_float(Category, Key, Value) ->
     set(Category, Key, kz_term:to_float(Value)).
 
+-spec set_boolean(config_category(), config_key(), text() | boolean()) -> set_ret().
 set_boolean(Category, Key, Value) ->
     set(Category, Key, kz_term:to_boolean(Value)).
 
+-spec set_json(config_category(), config_key(), text() | kz_json:object()) -> set_ret().
 set_json(Category, Key, Value) ->
     set(Category, Key, kz_json:decode(Value)).
 
@@ -577,44 +573,32 @@ set_json(Category, Key, Value) ->
 %% Set the key to the value in the given category but specific to this node
 %% @end
 %%-----------------------------------------------------------------------------
--spec set(config_category(), config_key(), any()) ->
-                 {'ok', kz_json:object()}.
+-spec set(config_category(), config_key(), any()) -> set_ret().
 set(Category, Key, Value) ->
     set(Category, Key, Value, node()).
 
--spec set(config_category(), config_key(), any(), ne_binary() | atom()) ->
-                 {'ok', kz_json:object()}.
+-spec set(config_category(), config_key(), any(), ne_binary() | atom()) -> set_ret().
 set(Category, Key, Value, Node) ->
     update_category(Category, Key, Value, Node, []).
 
--spec set_default(config_category(), config_key(), any()) ->
-                         {'ok', kz_json:object()} | 'ok' |
-                         {'error', any()}.
+-spec set_default(config_category(), config_key(), any()) -> set_ret().
 set_default(Category, Key, Value) ->
     update_category(Category, Key, Value, ?KEY_DEFAULT, []).
 
--spec update_default(config_category(), config_key(), kz_json:json_term()) ->
-                            {'ok', kz_json:object()} | 'ok' |
-                            {'error', any()}.
--spec update_default(config_category(), config_key(), kz_json:json_term(), update_options()) ->
-                            {'ok', kz_json:object()} | 'ok' |
-                            {'error', any()}.
+-spec update_default(config_category(), config_key(), kz_json:json_term()) -> set_ret().
 update_default(Category, Key, Value) ->
     update_default(Category, Key, Value, []).
+
+-spec update_default(config_category(), config_key(), kz_json:json_term(), update_options()) -> set_ret().
 update_default(Category, Key, Value, Options) ->
     update_category(Category, Key, Value, ?KEY_DEFAULT, Options).
 
--spec set_node(config_category(), config_key(), any(), ne_binary() | atom()) ->
-                      'ok' |
-                      {'ok', kz_json:object()}.
+-spec set_node(config_category(), config_key(), any(), ne_binary() | atom()) -> set_ret().
 set_node(Category, _, _, 'undefined') -> get_category(Category);
 set_node(Category, Key, Value, Node) ->
     update_category(Category, Key, Value, Node, [{'node_specific', 'true'}]).
 
--spec update_category(config_category(), config_key(), any(), ne_binary() | atom(), update_options()) ->
-                             'ok' |
-                             {'ok', kz_json:object()} |
-                             {'error', any()}.
+-spec update_category(config_category(), config_key(), any(), ne_binary() | atom(), update_options()) -> set_ret().
 update_category('undefined', _, _, _, _) -> 'ok';
 update_category(_, 'undefined', _, _, _) -> 'ok';
 update_category(_, _, 'undefined', _, _) -> 'ok';
