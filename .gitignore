@@ -78,3 +78,5 @@ compile_commands.json
 /node_modules/
 
 /doc/mkdocs/*.local
+
+/_build/
