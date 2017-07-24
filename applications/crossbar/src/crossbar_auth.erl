@@ -12,24 +12,15 @@
         ,authorize_auth_token/1
         ,log_success_auth/4, log_success_auth/5, log_success_auth/6
         ,log_failed_auth/4, log_failed_auth/5, log_failed_auth/6
+        ,get_auth_config/1, system_auth_config/0
         ]).
 
 -include("crossbar.hrl").
 
--define(DEFAULT_AUTH_EXPIRY, kapps_config:get_integer(?APP_NAME, <<"token_auth_expiry">>, ?SECONDS_IN_HOUR)).
--define(TOKEN_AUTH_EXPIRY(Method, AuthConfig)
-       ,kz_json:get_integer_value(method_config_path(Method, <<"token_auth_expiry">>), AuthConfig, ?DEFAULT_AUTH_EXPIRY)
-       ).
-
--define(SHOULD_LOG_FAILED,
-        kapps_config:get_is_true(?AUTH_CONFIG_CAT, <<"log_failed_attempts">>, 'false')
-       ).
--define(SHOULD_LOG_SUCCESS,
-        kapps_config:get_is_true(?AUTH_CONFIG_CAT, <<"log_successful_attempts">>, 'false')
-       ).
--define(SYSTEM_AUTH_CONFIG,
-        kapps_config:get_json(?AUTH_CONFIG_CAT, <<"auth_modules">>, kz_json:new())
-       ).
+-define(DEFAULT_AUTH_EXPIRY, kapps_config:get_integer(?AUTH_CONFIG_CAT, <<"token_auth_expiry">>, ?SECONDS_IN_HOUR)).
+-define(SHOULD_LOG_FAILED, kapps_config:get_is_true(?AUTH_CONFIG_CAT, <<"log_failed_attempts">>, 'false')).
+-define(SHOULD_LOG_SUCCESS, kapps_config:get_is_true(?AUTH_CONFIG_CAT, <<"log_successful_attempts">>, 'false')).
+-define(SYSTEM_AUTH_CONFIG, kapps_config:get_json(?AUTH_CONFIG_CAT, <<"auth_modules">>, kz_json:new())).
 
 -spec create_auth_token(cb_context:context(), atom()) ->
                                cb_context:context().
@@ -55,9 +46,9 @@ create_auth_token(Context, Method, JObj) ->
     AccountId = kz_json:get_first_defined([<<"account_id">>, [<<"Claims">>, <<"account_id">>]], JObj),
     OwnerId = kz_json:get_first_defined([<<"owner_id">>, [<<"Claims">>, <<"owner_id">>]], JObj),
 
-    AuthConfig = auth_config(AccountId),
+    AuthConfig = get_auth_config(AccountId),
 
-    Expiration = case ?TOKEN_AUTH_EXPIRY(Method, AuthConfig) of
+    Expiration = case get_method_config(Method, <<"token_auth_expiry">>, AuthConfig) of
                      TokenExp when TokenExp > 0 -> erlang:system_time('seconds') + TokenExp;
                      _ -> 'undefined'
                  end,
@@ -188,10 +179,10 @@ is_auth_module_enabled(Method, Config) ->
 %%      3.2. If not reseller, get parent's AccountId and go to (1)
 %% @end
 %%--------------------------------------------------------------------
--spec auth_config(api_ne_binary()) -> kz_json:object().
-auth_config('undefined') ->
-    system_auth_config();
-auth_config(Account) ->
+-spec get_auth_config(api_ne_binary()) -> kz_json:object().
+get_auth_config('undefined') ->
+    kz_json:from_list([{<<"system">>, system_auth_config()}]);
+get_auth_config(Account) ->
     AccountId = kz_util:format_account_id(Account, 'raw'),
     account_auth_config(AccountId, master_account_id()).
 
@@ -203,10 +194,10 @@ auth_config(Account) ->
 %%--------------------------------------------------------------------
 -spec account_auth_config(api_ne_binary(), api_ne_binary()) -> kz_json:object().
 account_auth_config('undefined', _MasterId) ->
-    system_auth_config();
+    kz_json:from_list([{<<"system">>, system_auth_config()}]);
 account_auth_config(MasterId, ?MATCH_ACCOUNT_RAW(MasterId)) ->
     lager:debug("reached to the master account, getting auth configs from system_configs"),
-    system_auth_config();
+    kz_json:from_list([{<<"system">>, system_auth_config()}]);
 account_auth_config(AccountId, MasterId) ->
     IsReseller = kz_services:is_reseller(AccountId),
     auth_config_from_doc(fetch_config(AccountId), AccountId, MasterId, IsReseller).
@@ -227,14 +218,16 @@ auth_config_from_doc({'ok', Configs}, AccountId, MasterId, _IsReseller) ->
         'true' -> account_auth_config(account_parent(AccountId), MasterId);
         'false' ->
             lager:debug("found auth config from ~s", [AccountId]),
-            kz_json:set_value(<<"from">>, AccountId, Configs)
+            SystemDefault = system_auth_config(),
+            AccountConfig = kz_json:set_value(<<"from">>, AccountId, kz_doc:public_fields(Configs)),
+            kz_json:from_list([{<<"account">>, AccountConfig}, {<<"system">>, SystemDefault}])
     end;
 auth_config_from_doc({'error', Reason}, _AccountId, _MasterId, 'true') ->
     Reason =:= 'not_found'
         andalso lager:debug("no auth configs found for reseller account ~s getting system wide configs", [_AccountId]),
     Reason =/= 'not_found'
         andalso lager:debug("failed to get auth configs for reseller account ~s getting system wide configs", [_AccountId]),
-    system_auth_config();
+    kz_json:from_list([{<<"system">>, system_auth_config()}]);
 auth_config_from_doc({'error', _Reason}, AccountId, MasterId, 'false') ->
     lager:debug("failed to get auth configs for account ~s getting parent account configs", [AccountId]),
     account_auth_config(account_parent(AccountId), MasterId).
@@ -263,6 +256,9 @@ system_auth_config() ->
     kz_json:from_list(
       [{<<"from">>, <<"system">>}
       ,{<<"auth_modules">>, ?SYSTEM_AUTH_CONFIG}
+      ,{<<"token_auth_expiry">>, ?DEFAULT_AUTH_EXPIRY}
+      ,{<<"log_failed_attempts">>, ?SHOULD_LOG_FAILED}
+      ,{<<"log_successful_attempts">>, ?SHOULD_LOG_SUCCESS}
       ]
      ).
 
@@ -330,11 +326,19 @@ multi_factor_allowed_for_account(_Master, _AccountId, _ParentAccount, IncludeSub
 
 -spec method_config_path(ne_binary(), ne_binary()) -> ne_binaries().
 method_config_path(Method, Key) ->
-    [<<"auth_modules">>, Method, Key].
+    [<<"account">>, <<"auth_modules">>, Method, Key].
 
 -spec method_mfa_path(ne_binary(), ne_binary()) -> ne_binaries().
 method_mfa_path(Method, Key) ->
-    [<<"auth_modules">>, Method, <<"multi_factor">>, Key].
+    [<<"account">>, <<"auth_modules">>, Method, <<"multi_factor">>, Key].
+
+-spec get_method_config(ne_binary(), ne_binary(), kz_json:object()) -> any().
+get_method_config(Method, Key, AuthConfig) ->
+    Path = method_config_path(Method, Key),
+    case kz_json:get_value(Path, AuthConfig) of
+        'undefined' -> kz_json:get_value([<<"system">>, Key], AuthConfig);
+        Value -> Value
+    end.
 
 %%--------------------------------------------------------------------
 %% @public
@@ -357,7 +361,7 @@ log_success_auth(AuthModule, AuthType, Reason, Context, 'undefined', AuthConfig)
         AccountId -> log_success_auth(AuthModule, AuthType, Reason, Context, AccountId, AuthConfig)
     end;
 log_success_auth(AuthModule, AuthType, Reason, Context, AccountId, 'undefined') ->
-    log_success_auth(AuthModule, AuthType, Reason, Context, AccountId, auth_config(AccountId));
+    log_success_auth(AuthModule, AuthType, Reason, Context, AccountId, get_auth_config(AccountId));
 log_success_auth(AuthModule, AuthType, Reason, Context, AccountId, AuthConfig) ->
     Method = kz_term:to_binary(AuthModule),
     case is_log_type_enabled(<<"success">>, Method, AuthConfig) of
@@ -387,7 +391,7 @@ log_failed_auth(AuthModule, AuthType, Reason, Context, 'undefined', AuthConfig) 
         AccountId -> log_failed_auth(AuthModule, AuthType, Reason, Context, AccountId, AuthConfig)
     end;
 log_failed_auth(AuthModule, AuthType, Reason, Context, AccountId, 'undefined') ->
-    log_failed_auth(AuthModule, AuthType, Reason, Context, AccountId, auth_config(AccountId));
+    log_failed_auth(AuthModule, AuthType, Reason, Context, AccountId, get_auth_config(AccountId));
 log_failed_auth(AuthModule, AuthType, Reason, Context, AccountId, AuthConfig) ->
     Method = kz_term:to_binary(AuthModule),
     case is_log_type_enabled(<<"failed">>, Method, AuthConfig) of
@@ -398,11 +402,9 @@ log_failed_auth(AuthModule, AuthType, Reason, Context, AccountId, AuthConfig) ->
 
 -spec is_log_type_enabled(ne_binary(), ne_binary(), kz_json:object()) -> boolean().
 is_log_type_enabled(<<"failed">>, Method, AuthConfig) ->
-    Key = method_config_path(Method, <<"log_failed_attempts">>),
-    kz_json:is_true(Key, AuthConfig, ?SHOULD_LOG_FAILED);
+    kz_term:is_true(get_method_config(Method, <<"log_failed_attempts">>, AuthConfig));
 is_log_type_enabled(<<"success">>, Method, AuthConfig) ->
-    Key = method_config_path(Method, <<"log_successful_attempts">>),
-    kz_json:is_true(Key, AuthConfig, ?SHOULD_LOG_SUCCESS).
+    kz_term:is_true(get_method_config(Method, <<"log_successful_attempts">>, AuthConfig)).
 
 -spec log_attempts(cb_context:context(), ne_binary(), kz_json:object(), ne_binary(), ne_binary(), ne_binary(), ne_binary()) -> 'ok'.
 log_attempts(Context, AccountId, AuthConfig, Method, Status, AuthType, Reason) ->
