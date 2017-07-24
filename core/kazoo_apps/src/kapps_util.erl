@@ -235,7 +235,7 @@ account_has_descendants(Account) ->
 %% @doc
 %% @end
 %%--------------------------------------------------------------------
--spec get_account_name(ne_binary()) -> ne_binary().
+-spec get_account_name(ne_binary()) -> api_ne_binary().
 get_account_name(Account) ->
     case kz_account:fetch(Account) of
         {'error', _} -> 'undefined';
