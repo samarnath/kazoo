@@ -463,7 +463,7 @@ get_system_public_key(Context, _) ->
 
 -spec set_public_key_response(cb_context:context(), ne_binary(), ne_binary()) -> cb_context:context().
 set_public_key_response(Context, PublicKeyPem, <<"application/json">>) ->
-    RespDoc = kz_json:from_list([{<<"system_public_key_pem">>, PublicKeyPem}]),
+    RespDoc = kz_json:from_list([{<<"public_key_pem">>, PublicKeyPem}]),
     Setters = [{fun cb_context:set_resp_status/2, 'success'}
               ,{fun cb_context:set_resp_data/2, RespDoc}
               ],
@@ -473,7 +473,7 @@ set_public_key_response(Context, PublicKeyPem, <<"application/x-pem-file">>=CT) 
               ,{fun cb_context:set_resp_data/2, PublicKeyPem}
               ,{fun cb_context:add_resp_headers/2
                ,[{<<"Content-Type">>, CT}
-                ,{<<"Content-Disposition">>, <<"attachment; filename=system_pub_key.pem">>}
+                ,{<<"Content-Disposition">>, <<"attachment; filename=public_key.pem">>}
                 ,{<<"Content-Length">>, erlang:size(PublicKeyPem)}
                 ]
                }
