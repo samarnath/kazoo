@@ -17,9 +17,26 @@
 
 -include("crossbar.hrl").
 
--define(DEFAULT_AUTH_EXPIRY, kapps_config:get_integer(?AUTH_CONFIG_CAT, <<"token_auth_expiry">>, ?SECONDS_IN_HOUR)).
--define(SHOULD_LOG_FAILED, kapps_config:get_is_true(?AUTH_CONFIG_CAT, <<"log_failed_attempts">>, 'false')).
--define(SHOULD_LOG_SUCCESS, kapps_config:get_is_true(?AUTH_CONFIG_CAT, <<"log_successful_attempts">>, 'false')).
+-define(DEFAULT_MOD_CONFIG, [{<<"enabled">>, true}
+                            ,{<<"token_auth_expiry">>, ?SECONDS_IN_HOUR}
+                            ,{<<"log_failed_attempts">>, true}
+                            ,{<<"log_successful_attempts">>, true}
+                            ]
+       ).
+
+-define(DEFAULT_CONFIG,
+        kz_json:from_list_recursive(
+          [{<<"cb_user_auth">>, ?DEFAULT_MOD_CONFIG}
+          ,{<<"cb_api_auth">>, ?DEFAULT_MOD_CONFIG}
+          ,{<<"cb_ip_auth">>, ?DEFAULT_MOD_CONFIG}
+          ,{<<"cb_ubiquiti_auth">>, ?DEFAULT_MOD_CONFIG}
+          ]
+         )
+       ).
+
+-define(DEFAULT_AUTH_EXPIRY, kapps_config:get_integer(?APP_NAME, <<"token_auth_expiry">>, ?SECONDS_IN_HOUR)).
+-define(SHOULD_LOG_FAILED, kapps_config:get_is_true(?AUTH_CONFIG_CAT, <<"log_failed_attempts">>, 'true')).
+-define(SHOULD_LOG_SUCCESS, kapps_config:get_is_true(?AUTH_CONFIG_CAT, <<"log_successful_attempts">>, 'true')).
 -define(SYSTEM_AUTH_CONFIG, kapps_config:get_json(?AUTH_CONFIG_CAT, <<"auth_modules">>, kz_json:new())).
 
 -spec create_auth_token(cb_context:context(), atom()) ->
@@ -324,21 +341,40 @@ multi_factor_allowed_for_account(_Master, _AccountId, <<"system">>, _IncludeSubA
 multi_factor_allowed_for_account(_Master, AccountId, AccountId, _IncludeSubAcc) -> 'true';
 multi_factor_allowed_for_account(_Master, _AccountId, _ParentAccount, IncludeSubAcc) -> IncludeSubAcc.
 
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% method path
+%% @end
+%%--------------------------------------------------------------------
 -spec method_config_path(ne_binary(), ne_binary()) -> ne_binaries().
 method_config_path(Method, Key) ->
     [<<"account">>, <<"auth_modules">>, Method, Key].
 
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% multi-factor method path
+%% @end
+%%--------------------------------------------------------------------
 -spec method_mfa_path(ne_binary(), ne_binary()) -> ne_binaries().
 method_mfa_path(Method, Key) ->
     [<<"account">>, <<"auth_modules">>, Method, <<"multi_factor">>, Key].
 
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Accessor to get value of a key in account's method config if available
+%% or system if not available
+%% @end
+%%--------------------------------------------------------------------
 -spec get_method_config(ne_binary(), ne_binary(), kz_json:object()) -> any().
 get_method_config(Method, Key, AuthConfig) ->
-    Path = method_config_path(Method, Key),
-    case kz_json:get_value(Path, AuthConfig) of
-        'undefined' -> kz_json:get_value([<<"system">>, Key], AuthConfig);
-        Value -> Value
-    end.
+    Paths = [method_config_path(Method, Key)
+            ,[<<"system">>, <<"auth_modules">>, Method, Key]
+            ,[<<"system">>, Key]
+            ],
+    kz_json:get_first_defined(Paths, AuthConfig).
 
 %%--------------------------------------------------------------------
 %% @public

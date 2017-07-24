@@ -8,10 +8,12 @@
             "description": "Default crossbar authentication modules configuration",
             "type": "object"
         },
-        "available_auth_modules": {
+        "available_auth_methods": {
             "default": [
                 "cb_user_auth",
-                "cb_api_auth"
+                "cb_api_auth",
+                "cb_ip_auth",
+                "cb_ubiquiti_auth"
             ],
             "description": "List of crossbar auth configurable modules",
             "items": {
