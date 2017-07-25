@@ -116,6 +116,7 @@ account_is_descendant('false', Context, AuthAccountId) ->
                 %% is the parent tree, make sure the authorized account id is in that tree
                 {'ok', JObj} ->
                     Tree = kz_account:tree(JObj),
+                    io:format("~n Authenticates ~p Tree ~p~n", [AuthAccountId, Tree]),
                     case lists:member(AuthAccountId, Tree) of
                         'true' ->
                             lager:debug("authorizing requested account is a descendant of the auth token"),
